@@ -31,6 +31,12 @@ public class ClassPreProcessorAgentAdapter implements ClassFileTransformer {
 		}
 	}
 
+	private final ClassLoader agentLoader;
+
+	public ClassPreProcessorAgentAdapter(ClassLoader agentLoader) {
+		this.agentLoader = agentLoader;
+	}
+
 	/**
 	 * Invokes the weaver to modify some set of input bytes.
 	 * 
@@ -44,6 +50,9 @@ public class ClassPreProcessorAgentAdapter implements ClassFileTransformer {
 	@Override
 	public byte[] transform(ClassLoader loader, String className, Class<?> classBeingRedefined, ProtectionDomain protectionDomain,
 			byte[] bytes) throws IllegalClassFormatException {
+		if (loader == null) {
+			loader = agentLoader;
+		}
 		if (classBeingRedefined != null) {
 			System.err.println("INFO: (Enh120375):  AspectJ attempting reweave of '" + className + "'");
 			classPreProcessor.prepareForRedefinition(loader, className);

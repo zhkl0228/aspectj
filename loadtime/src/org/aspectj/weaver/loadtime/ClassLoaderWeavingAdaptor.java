@@ -9,9 +9,12 @@
 package org.aspectj.weaver.loadtime;
 
 import java.io.File;
+import java.io.FileOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
+import java.lang.instrument.Instrumentation;
 import java.lang.reflect.Field;
+import java.lang.reflect.Method;
 import java.net.MalformedURLException;
 import java.net.URL;
 import java.security.ProtectionDomain;
@@ -27,6 +30,9 @@ import java.util.Map.Entry;
 import java.util.Properties;
 import java.util.Set;
 import java.util.StringTokenizer;
+import java.util.jar.JarFile;
+import java.util.zip.ZipEntry;
+import java.util.zip.ZipOutputStream;
 
 import org.aspectj.bridge.AbortException;
 import org.aspectj.bridge.Constants;
@@ -149,7 +155,6 @@ public class ClassLoaderWeavingAdaptor extends WeavingAdaptor {
 				defineClass(loaderRef.getClassLoader(), name, wovenBytes, activeProtectionDomain);
 			} else {
 				defineClass(loaderRef.getClassLoader(), name, wovenBytes); // could be done lazily using the hook
-
 			}
 		}
 	}
@@ -1042,8 +1047,31 @@ public class ClassLoaderWeavingAdaptor extends WeavingAdaptor {
 		}
 		return unsafe;
     }
+
+    private void zipClass(ClassLoader loader, String name, byte[] bytes) {
+		try {
+			File tmpJar = File.createTempFile(name, ".jar");
+			ZipOutputStream out = new ZipOutputStream(new FileOutputStream(tmpJar));
+			ZipEntry entry = new ZipEntry(name.replace('.', '/') + ".class");
+			out.putNextEntry(entry);
+			out.write(bytes);
+			out.closeEntry();
+			out.close();
+
+			Class<?> clazz = loader.loadClass("org.aspectj.weaver.loadtime.Agent");
+			Method method = clazz.getDeclaredMethod("getInstrumentation");
+			Instrumentation instrumentation = (Instrumentation) method.invoke(null);
+			if (instrumentation != null) {
+				instrumentation.appendToBootstrapClassLoaderSearch(new JarFile(tmpJar));
+			}
+		} catch (Exception e) {
+			throw new IllegalStateException(e);
+		}
+	}
 	
 	private void defineClass(ClassLoader loader, String name, byte[] bytes) {
+		zipClass(loader, name, bytes);
+
 		if (trace.isTraceEnabled()) {
 			trace.enter("defineClass", this, new Object[] { loader, name, bytes });
 		}
@@ -1067,6 +1095,8 @@ public class ClassLoaderWeavingAdaptor extends WeavingAdaptor {
 	}
 
 	private void defineClass(ClassLoader loader, String name, byte[] bytes, ProtectionDomain protectionDomain) {
+		zipClass(loader, name, bytes);
+
 		if (trace.isTraceEnabled()) {
 			trace.enter("defineClass", this, new Object[] { loader, name, bytes, protectionDomain });
 		}
